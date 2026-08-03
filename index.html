@@ -2,21 +2,26 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>GoDice Magic</title>
     
-    <!-- PWA 및 전체화면 실행 설정 -->
+    <!-- PWA 및 스마트폰 전체화면/상단바 제어 설정 -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <!-- 아이폰 상단바를 완전한 검은색으로 흡수 -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
     <link rel="manifest" href="manifest.json">
 
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background-color: #000000;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #000000;
             color: #ffffff;
             display: flex;
             flex-direction: column;
@@ -39,12 +44,12 @@
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
             background-color: #000000;
-            opacity: 0; /* 0일 때 100% 밝기, 0.9일 때 10% 밝기 */
+            opacity: 0;
             pointer-events: none;
             z-index: 999;
         }
 
-        /* 상단 밝기 조절 바 (기본 숨김 -> 연결 후 터치 시 표시) */
+        /* 상단 밝기 조절 바 (연결 후 터치 시 표시) */
         .brightness-control {
             position: fixed;
             top: 20px;
@@ -54,7 +59,7 @@
             border: 1px solid #333;
             padding: 10px 20px;
             border-radius: 20px;
-            display: none; /* 초기에는 완전히 안 보임 */
+            display: none;
             align-items: center;
             gap: 12px;
             z-index: 1000;
@@ -181,7 +186,7 @@
     <!-- 밝기 조절 필터 레이어 -->
     <div id="brightnessOverlay"></div>
 
-    <!-- 밝기 조절 슬라이더 (주사위 연결 완료 후 스텔스 해제 시에만 표시) -->
+    <!-- 밝기 조절 슬라이더 (연결 후 터치 시 표시) -->
     <div class="brightness-control ui-element" id="brightnessControl">
         <span>☀️ 밝기</span>
         <input type="range" id="brightnessRange" min="10" max="100" value="100">
@@ -252,6 +257,16 @@
         brightnessOverlay.style.opacity = (100 - val) / 100;
     });
 
+    // 안드로이드 OS용 시스템 상/하단바 숨김 전체화면 제어
+    function requestFullScreenMode() {
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) {
+            docEl.requestFullscreen().catch(() => {});
+        } else if (docEl.webkitRequestFullscreen) {
+            docEl.webkitRequestFullscreen();
+        }
+    }
+
     // 스텔스 타이머 (3초 후 UI 페이드아웃)
     function startStealthTimer() {
         clearTimeout(stealthTimer);
@@ -262,9 +277,13 @@
         }, 3000);
     }
 
-    // 화면 아무 곳이나 터치 시 UI 복원
+    // 화면 아무 곳이나 터치 시 전체화면 시도 및 UI 복원
     mainBody.addEventListener('click', (e) => {
         if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        
+        // 터치 시 안드로이드 네비게이션/상단바 숨김 처리
+        requestFullScreenMode();
+
         if (mainBody.classList.contains('stealth-active')) {
             mainBody.classList.remove('stealth-active');
             startStealthTimer();
@@ -343,10 +362,11 @@
             if (connectedDevices['K'] && connectedDevices['B']) {
                 statusText.innerText = '모든 주사위 연결 완료!';
                 btnConnectBoth.style.display = 'none';
-                btnPosToggle.style.display = 'none'; // 초기 설정 버튼 감춤
-                
-                // 두 개 모두 연결되면 밝기 조절 슬라이더 활성화 및 표시
+                btnPosToggle.style.display = 'none';
                 brightnessControl.style.display = 'flex';
+                
+                // 두 개 다 연결된 직후 전체화면 모드 진입
+                requestFullScreenMode();
             }
             
             startStealthTimer();
@@ -374,7 +394,7 @@
                 mainBody.classList.remove('stealth-active');
                 btnConnectBoth.style.display = 'block';
                 btnPosToggle.style.display = 'block';
-                brightnessControl.style.display = 'none'; // 해제 시 밝기 버튼 숨김
+                brightnessControl.style.display = 'none';
                 statusText.innerText = '연결이 해제되었습니다.';
             });
 
