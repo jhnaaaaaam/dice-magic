@@ -5,13 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>GoDice Magic</title>
     
-    <!-- PWA (바탕화면 앱 설치) 설정 -->
+    <!-- PWA 및 전체화면 실행 설정 -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    
-    <!-- PWA 매니페스트 인라인 구성 -->
     <link rel="manifest" href="manifest.json">
 
     <style>
@@ -31,7 +29,7 @@
             user-select: none;
         }
 
-        /* 사라질 UI 요소 클래스 */
+        /* 은밀 모드(스텔스) 전환 처리 */
         .ui-element {
             transition: opacity 0.8s ease, visibility 0.8s ease;
             opacity: 1;
@@ -68,7 +66,7 @@
             padding: 25px 15px;
             text-align: center;
             border: 1px solid #1a1a1a;
-            transition: all 0.3s ease;
+            position: relative;
         }
 
         .black-card .dice-icon { color: #ffffff; }
@@ -99,11 +97,19 @@
             color: #ffffff;
         }
 
+        /* 은밀한 어두운 배터리 정보 표시 */
+        .battery-info {
+            font-size: 0.75rem;
+            color: #333333; /* 관객 눈에 띄지 않도록 아주 어두운 텍스트 */
+            margin-top: 8px;
+            font-weight: 600;
+        }
+
         .controls {
             display: flex;
             flex-direction: column;
             gap: 10px;
-            margin-top: 30px;
+            margin-top: 25px;
             width: 100%;
             max-width: 320px;
         }
@@ -111,18 +117,16 @@
         button {
             color: white;
             border: none;
-            padding: 14px 20px;
-            font-size: 0.95rem;
+            padding: 12px 20px;
+            font-size: 0.9rem;
             font-weight: bold;
             border-radius: 12px;
             cursor: pointer;
             transition: background 0.2s;
         }
 
-        .btn-dual { background-color: #333333; }
-        .btn-install { background-color: #1b5e20; display: none; } /* PWA 설치 버튼 */
-
-        button:disabled { background-color: #111111; color: #444; cursor: not-allowed; }
+        .btn-dual { background-color: #222222; border: 1px solid #444; }
+        .btn-setting { background-color: #111111; color: #666; font-size: 0.8rem; border: 1px solid #222; }
 
         #statusText {
             margin-top: 15px;
@@ -137,24 +141,26 @@
     <h1 class="ui-element">🎲 GoDice Receiver</h1>
 
     <div class="dice-container">
-        <!-- 왼쪽: 검정 주사위 -->
+        <!-- 검정 주사위 (왼쪽) -->
         <div class="dice-card black-card" id="card-K">
-            <div class="label ui-element">BLACK</div>
+            <div class="label ui-element" id="label-K">BLACK</div>
             <div class="dice-icon" id="icon-K">⚀</div>
             <div class="dice-number" id="num-K">-</div>
+            <div class="battery-info" id="bat-K">⚡ - %</div>
         </div>
 
-        <!-- 오른쪽: 파란 주사위 -->
+        <!-- 파란 주사위 (오른쪽) -->
         <div class="dice-card blue-card" id="card-B">
-            <div class="label ui-element">BLUE</div>
+            <div class="label ui-element" id="label-B">BLUE</div>
             <div class="dice-icon" id="icon-B">⚀</div>
             <div class="dice-number" id="num-B">-</div>
+            <div class="battery-info" id="bat-B">⚡ - %</div>
         </div>
     </div>
 
     <div class="controls ui-element">
-        <button id="btnInstall" class="btn-install">📱 앱으로 설치하기</button>
         <button id="btnConnectBoth" class="btn-dual">⚡ 주사위 연결하기</button>
+        <button id="btnSettings" class="btn-setting">⚙️ 주사위 모델/이름 설정</button>
     </div>
 
     <div id="statusText" class="ui-element">주사위를 연결해 주세요.</div>
@@ -162,39 +168,35 @@
 <script>
     const GODICE_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
     const GODICE_NOTIFY_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+    
+    // 블루투스 표준 배터리 서비스 UUID
+    const BATTERY_SERVICE_UUID = 0x180F;
+    const BATTERY_LEVEL_CHAR_UUID = 0x2A19;
+
     const diceIcons = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
     const mainBody = document.getElementById('mainBody');
     const btnConnectBoth = document.getElementById('btnConnectBoth');
-    const btnInstall = document.getElementById('btnInstall');
+    const btnSettings = document.getElementById('btnSettings');
     const statusText = document.getElementById('statusText');
 
+    let dicePrefix = localStorage.getItem('godice_prefix') || 'GoDice';
     let connectedDevices = { 'K': null, 'B': null };
     let stealthTimer = null;
-    let deferredPrompt = null;
 
-    // --- PWA 앱 설치 이벤트 처리 ---
-    window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        btnInstall.style.display = 'block';
-    });
-
-    btnInstall.addEventListener('click', async () => {
-        if (deferredPrompt) {
-            deferredPrompt.prompt();
-            const { outcome } = await deferredPrompt.userChoice;
-            if (outcome === 'accepted') {
-                btnInstall.style.display = 'none';
-            }
-            deferredPrompt = null;
+    // 모델명 및 키워드 설정 버튼
+    btnSettings.addEventListener('click', () => {
+        const newPrefix = prompt("주사위 모델명/검색 키워드를 입력하세요:\n(시리얼 번호가 바뀌어도 앞 이름만 같으면 인식됩니다)", dicePrefix);
+        if (newPrefix !== null && newPrefix.trim() !== "") {
+            dicePrefix = newPrefix.trim();
+            localStorage.setItem('godice_prefix', dicePrefix);
+            alert(`검색 키워드가 '${dicePrefix}'(으)로 변경되었습니다.`);
         }
     });
 
-    // --- 스텔스(화면 숨김) 모드 컨트롤 ---
+    // 스텔스 타이머 (모두 연결 후 3초 뒤 화면 요소 페이드아웃)
     function startStealthTimer() {
         clearTimeout(stealthTimer);
-        // 3초 후 UI 요소 숨김
         stealthTimer = setTimeout(() => {
             if (connectedDevices['K'] || connectedDevices['B']) {
                 mainBody.classList.add('stealth-active');
@@ -202,14 +204,12 @@
         }, 3000);
     }
 
-    // 화면 터치 시 잠시 UI 보여주기
+    // 은밀 모드 상태에서 화면 아무 곳이나 터치하면 잠시 UI 복원
     mainBody.addEventListener('click', (e) => {
-        // 버튼 클릭 시에는 스텔스 해제 동작 방지
         if (e.target.tagName === 'BUTTON') return;
-
         if (mainBody.classList.contains('stealth-active')) {
             mainBody.classList.remove('stealth-active');
-            startStealthTimer(); // 다시 3초 뒤 숨김
+            startStealthTimer();
         }
     });
 
@@ -225,7 +225,7 @@
     }
 
     async function connectBothDice() {
-        statusText.innerText = '주사위를 순서대로 선택해 주세요...';
+        statusText.innerText = `'${dicePrefix}' 키워드로 검색 중... 주사위를 선택해 주세요.`;
         await requestAndConnectOne();
         if (!connectedDevices['K'] || !connectedDevices['B']) {
             await requestAndConnectOne();
@@ -235,17 +235,30 @@
     async function requestAndConnectOne() {
         try {
             const device = await navigator.bluetooth.requestDevice({
-                filters: [{ namePrefix: 'GoDice' }],
-                optionalServices: [GODICE_SERVICE_UUID]
+                filters: [{ namePrefix: dicePrefix }],
+                optionalServices: [GODICE_SERVICE_UUID, BATTERY_SERVICE_UUID]
             });
 
-            let type = device.name.includes('_K_') ? 'K' : (device.name.includes('_B_') ? 'B' : null);
-            if (!type) {
-                alert('검정(_K_) 또는 파랑(_B_) 주사위를 선택해주세요.');
+            // 중간 시리얼 번호(8A0F87 등)에 관계없이 _K 및 _B 자동 판별
+            const upperName = device.name ? device.name.toUpperCase() : '';
+            let type = null;
+
+            if (upperName.includes('_K')) {
+                type = 'K'; // 검정 주사위 -> 왼쪽
+            } else if (upperName.includes('_B')) {
+                type = 'B'; // 파랑 주사위 -> 오른쪽
+            } else {
+                // 특정 구분이 없는 예외 모델의 경우 빈자리에 순서대로 할당
+                type = !connectedDevices['K'] ? 'K' : (!connectedDevices['B'] ? 'B' : null);
+            }
+
+            if (!type) return;
+
+            if (connectedDevices[type]) {
+                statusText.innerText = `이미 ${type === 'K' ? '검정(K)' : '파랑(B)'} 주사위가 연결되어 있습니다.`;
                 return;
             }
 
-            if (connectedDevices[type]) return;
             await connectToDiceGATT(device, type);
 
         } catch (err) {
@@ -256,26 +269,40 @@
     async function connectToDiceGATT(device, type) {
         const icon = document.getElementById(`icon-${type}`);
         const num = document.getElementById(`num-${type}`);
+        const batEl = document.getElementById(`bat-${type}`);
+        const labelEl = document.getElementById(`label-${type}`);
 
         try {
             statusText.innerText = `${device.name} 연결 중...`;
             const server = await device.gatt.connect();
+            
+            // 1. 주사위 신호 수신
             const service = await server.getPrimaryService(GODICE_SERVICE_UUID);
             const characteristic = await service.getCharacteristic(GODICE_NOTIFY_CHAR_UUID);
-
             await characteristic.startNotifications();
-            connectedDevices[type] = device;
 
-            statusText.innerText = `✅ ${type === 'K' ? '검정' : '파란'} 주사위 연결됨`;
-
-            // 주사위 연결 완료 시 타이머 시작
-            if (connectedDevices['K'] && connectedDevices['B']) {
-                statusText.innerText = '연결 완료! 잠시 후 화면이 은밀 모드로 전환됩니다.';
-                btnConnectBoth.style.display = 'none';
-                startStealthTimer();
-            } else {
-                startStealthTimer();
+            // 2. 배터리 잔량 조회
+            try {
+                const batService = await server.getPrimaryService(BATTERY_SERVICE_UUID);
+                const batChar = await batService.getCharacteristic(BATTERY_LEVEL_CHAR_UUID);
+                const batValue = await batChar.readValue();
+                const batteryLevel = batValue.getUint8(0);
+                batEl.innerText = `⚡ ${batteryLevel}%`;
+            } catch (batErr) {
+                batEl.innerText = `⚡ --%`;
             }
+
+            connectedDevices[type] = device;
+            labelEl.innerText = type === 'K' ? 'BLACK' : 'BLUE';
+
+            statusText.innerText = `✅ ${device.name} 연결 완료`;
+
+            if (connectedDevices['K'] && connectedDevices['B']) {
+                statusText.innerText = '모든 주사위 연결 완료! 잠시 후 화면이 숨겨집니다.';
+                btnConnectBoth.style.display = 'none';
+            }
+            
+            startStealthTimer();
 
             characteristic.addEventListener('characteristicvaluechanged', (event) => {
                 const dataView = event.target.value;
@@ -297,6 +324,7 @@
                 connectedDevices[type] = null;
                 icon.innerText = '⚀';
                 num.innerText = '-';
+                batEl.innerText = '⚡ - %';
                 mainBody.classList.remove('stealth-active');
                 btnConnectBoth.style.display = 'block';
                 statusText.innerText = '연결이 해제되었습니다.';
