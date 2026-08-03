@@ -389,7 +389,7 @@
             
             startStealthTimer();
 
-            ccharacteristic.addEventListener('characteristicvaluechanged', (event) => {
+            characteristic.addEventListener('characteristicvaluechanged', (event) => {
                 const dataView = event.target.value;
                 // 패킷 길이가 최소 규격 미만이면 무시
                 if (!dataView || dataView.byteLength < 3) return;
