@@ -227,6 +227,13 @@
     <div class="copyright ui-element">Copyright © JH. All rights reserved.</div>
 
 <script>
+    // PWA 앱 설치를 위한 서비스 워커 등록 (최상단 추가)
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js')
+            .then(() => console.log('Service Worker Registered'))
+            .catch(err => console.log('SW Fail:', err));
+    }
+
     const GODICE_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
     const GODICE_NOTIFY_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
