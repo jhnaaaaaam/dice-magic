@@ -389,19 +389,33 @@
             
             startStealthTimer();
 
-            characteristic.addEventListener('characteristicvaluechanged', (event) => {
+            ccharacteristic.addEventListener('characteristicvaluechanged', (event) => {
                 const dataView = event.target.value;
-                if (dataView.byteLength < 5) return;
+                // 패킷 길이가 최소 규격 미만이면 무시
+                if (!dataView || dataView.byteLength < 3) return;
 
-                const x = toSignedByte(dataView.getUint8(2));
-                const y = toSignedByte(dataView.getUint8(3));
-                const z = toSignedByte(dataView.getUint8(4));
+                let x, y, z;
 
+                // GoDice 특성: 패킷 포맷에 따른 좌표 파싱 (안정적인 5바이트 이상 패킷 우선)
+                if (dataView.byteLength >= 5) {
+                    x = toSignedByte(dataView.getUint8(2));
+                    y = toSignedByte(dataView.getUint8(3));
+                    z = toSignedByte(dataView.getUint8(4));
+                } else {
+                    x = toSignedByte(dataView.getUint8(0));
+                    y = toSignedByte(dataView.getUint8(1));
+                    z = toSignedByte(dataView.getUint8(2));
+                }
+            
+                // 던졌을 때 강한 충격파(노이즈) 제거 및 가장 강한 축 면 계산
                 const diceVal = calculateDiceFace(x, y, z);
-
+            
                 if (diceVal >= 1 && diceVal <= 6) {
-                    icon.innerText = diceIcons[diceVal];
-                    num.innerText = diceVal;
+                    // 값이 실제로 달라졌을 때만 UI 업데이트 (렌더링 렉 감소)
+                    if (num.innerText !== String(diceVal)) {
+                        icon.innerText = diceIcons[diceVal];
+                        num.innerText = diceVal;
+                    }
                 }
             });
 
