@@ -21,12 +21,50 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
             min-height: 100vh;
             margin: 0;
             padding: 20px;
             overflow: hidden;
             user-select: none;
+            position: relative;
+        }
+
+        /* 주사위 카드 위치 조절용 스타일 */
+        body.pos-top { justify-content: flex-start; padding-top: 60px; }
+        body.pos-center { justify-content: center; }
+        body.pos-bottom { justify-content: flex-end; padding-bottom: 80px; }
+
+        /* 화면 전체 밝기 조절용 오버레이 */
+        #brightnessOverlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: #000000;
+            opacity: 0; /* 0일 때 100% 밝기, 0.9일 때 10% 밝기 */
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        /* 상단 밝기 조절 바 */
+        .brightness-control {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20, 20, 20, 0.85);
+            border: 1px solid #333;
+            padding: 10px 20px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 1000;
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+
+        .brightness-control input[type=range] {
+            width: 120px;
+            accent-color: #888;
         }
 
         /* 은밀 모드(스텔스) 전환 처리 */
@@ -44,9 +82,10 @@
 
         h1 { 
             margin-bottom: 20px; 
-            font-size: 1.5rem; 
+            font-size: 1.4rem; 
             letter-spacing: 1px; 
             color: #888888;
+            margin-top: 0;
         }
 
         .dice-container {
@@ -97,14 +136,6 @@
             color: #ffffff;
         }
 
-        /* 은밀한 어두운 배터리 정보 표시 */
-        .battery-info {
-            font-size: 0.75rem;
-            color: #333333; /* 관객 눈에 띄지 않도록 아주 어두운 텍스트 */
-            margin-top: 8px;
-            font-weight: 600;
-        }
-
         .controls {
             display: flex;
             flex-direction: column;
@@ -126,7 +157,7 @@
         }
 
         .btn-dual { background-color: #222222; border: 1px solid #444; }
-        .btn-setting { background-color: #111111; color: #666; font-size: 0.8rem; border: 1px solid #222; }
+        .btn-pos { background-color: #111111; color: #777; font-size: 0.8rem; border: 1px solid #222; }
 
         #statusText {
             margin-top: 15px;
@@ -134,9 +165,27 @@
             font-size: 0.85rem;
             text-align: center;
         }
+
+        /* 하단 카피라이트 문구 */
+        .copyright {
+            position: fixed;
+            bottom: 15px;
+            font-size: 0.7rem;
+            color: #444444;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
-<body id="mainBody">
+<body id="mainBody" class="pos-center">
+
+    <!-- 밝기 조절 필터 레이어 -->
+    <div id="brightnessOverlay"></div>
+
+    <!-- 밝기 조절 슬라이더 (스텔스 모드 해제 시 보임) -->
+    <div class="brightness-control ui-element" id="brightnessControl">
+        <span>☀️ 밝기</span>
+        <input type="range" id="brightnessRange" min="10" max="100" value="100">
+    </div>
 
     <h1 class="ui-element">🎲 GoDice Receiver</h1>
 
@@ -146,7 +195,6 @@
             <div class="label ui-element" id="label-K">BLACK</div>
             <div class="dice-icon" id="icon-K">⚀</div>
             <div class="dice-number" id="num-K">-</div>
-            <div class="battery-info" id="bat-K">⚡ - %</div>
         </div>
 
         <!-- 파란 주사위 (오른쪽) -->
@@ -154,47 +202,57 @@
             <div class="label ui-element" id="label-B">BLUE</div>
             <div class="dice-icon" id="icon-B">⚀</div>
             <div class="dice-number" id="num-B">-</div>
-            <div class="battery-info" id="bat-B">⚡ - %</div>
         </div>
     </div>
 
     <div class="controls ui-element">
         <button id="btnConnectBoth" class="btn-dual">⚡ 주사위 연결하기</button>
-        <button id="btnSettings" class="btn-setting">⚙️ 주사위 모델/이름 설정</button>
+        <button id="btnPosToggle" class="btn-pos">📐 위치: 중앙</button>
     </div>
 
     <div id="statusText" class="ui-element">주사위를 연결해 주세요.</div>
 
+    <!-- 카피라이트 표시 -->
+    <div class="copyright ui-element">Copyright © JH. All rights reserved.</div>
+
 <script>
     const GODICE_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
     const GODICE_NOTIFY_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
-    
-    // 블루투스 표준 배터리 서비스 UUID
-    const BATTERY_SERVICE_UUID = 0x180F;
-    const BATTERY_LEVEL_CHAR_UUID = 0x2A19;
 
     const diceIcons = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
     const mainBody = document.getElementById('mainBody');
     const btnConnectBoth = document.getElementById('btnConnectBoth');
-    const btnSettings = document.getElementById('btnSettings');
+    const btnPosToggle = document.getElementById('btnPosToggle');
     const statusText = document.getElementById('statusText');
+    const brightnessRange = document.getElementById('brightnessRange');
+    const brightnessOverlay = document.getElementById('brightnessOverlay');
 
-    let dicePrefix = localStorage.getItem('godice_prefix') || 'GoDice';
+    let dicePrefix = 'GoDice';
     let connectedDevices = { 'K': null, 'B': null };
     let stealthTimer = null;
 
-    // 모델명 및 키워드 설정 버튼
-    btnSettings.addEventListener('click', () => {
-        const newPrefix = prompt("주사위 모델명/검색 키워드를 입력하세요:\n(시리얼 번호가 바뀌어도 앞 이름만 같으면 인식됩니다)", dicePrefix);
-        if (newPrefix !== null && newPrefix.trim() !== "") {
-            dicePrefix = newPrefix.trim();
-            localStorage.setItem('godice_prefix', dicePrefix);
-            alert(`검색 키워드가 '${dicePrefix}'(으)로 변경되었습니다.`);
-        }
+    // 위치 설정 (상단 -> 중앙 -> 하단)
+    const positions = ['pos-center', 'pos-bottom', 'pos-top'];
+    const posNames = { 'pos-top': '상단', 'pos-center': '중앙', 'pos-bottom': '하단' };
+    let currentPosIdx = 0;
+
+    btnPosToggle.addEventListener('click', () => {
+        mainBody.classList.remove(positions[currentPosIdx]);
+        currentPosIdx = (currentPosIdx + 1) % positions.length;
+        const newPos = positions[currentPosIdx];
+        mainBody.classList.add(newPos);
+        btnPosToggle.innerText = `📐 위치: ${posNames[newPos]}`;
     });
 
-    // 스텔스 타이머 (모두 연결 후 3초 뒤 화면 요소 페이드아웃)
+    // 밝기 조절 슬라이더 로직
+    brightnessRange.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        // 밝기 값이 낮을수록 오버레이 투명도를 높여 화면을 어둡게 만듦
+        brightnessOverlay.style.opacity = (100 - val) / 100;
+    });
+
+    // 스텔스 타이머 (3초 후 UI 페이드아웃)
     function startStealthTimer() {
         clearTimeout(stealthTimer);
         stealthTimer = setTimeout(() => {
@@ -204,9 +262,9 @@
         }, 3000);
     }
 
-    // 은밀 모드 상태에서 화면 아무 곳이나 터치하면 잠시 UI 복원
+    // 화면 아무 곳이나 터치 시 UI 복원
     mainBody.addEventListener('click', (e) => {
-        if (e.target.tagName === 'BUTTON') return;
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
         if (mainBody.classList.contains('stealth-active')) {
             mainBody.classList.remove('stealth-active');
             startStealthTimer();
@@ -225,7 +283,7 @@
     }
 
     async function connectBothDice() {
-        statusText.innerText = `'${dicePrefix}' 키워드로 검색 중... 주사위를 선택해 주세요.`;
+        statusText.innerText = '주사위를 선택해 주세요...';
         await requestAndConnectOne();
         if (!connectedDevices['K'] || !connectedDevices['B']) {
             await requestAndConnectOne();
@@ -236,19 +294,17 @@
         try {
             const device = await navigator.bluetooth.requestDevice({
                 filters: [{ namePrefix: dicePrefix }],
-                optionalServices: [GODICE_SERVICE_UUID, BATTERY_SERVICE_UUID]
+                optionalServices: [GODICE_SERVICE_UUID]
             });
 
-            // 중간 시리얼 번호(8A0F87 등)에 관계없이 _K 및 _B 자동 판별
             const upperName = device.name ? device.name.toUpperCase() : '';
             let type = null;
 
             if (upperName.includes('_K')) {
-                type = 'K'; // 검정 주사위 -> 왼쪽
+                type = 'K';
             } else if (upperName.includes('_B')) {
-                type = 'B'; // 파랑 주사위 -> 오른쪽
+                type = 'B';
             } else {
-                // 특정 구분이 없는 예외 모델의 경우 빈자리에 순서대로 할당
                 type = !connectedDevices['K'] ? 'K' : (!connectedDevices['B'] ? 'B' : null);
             }
 
@@ -269,28 +325,15 @@
     async function connectToDiceGATT(device, type) {
         const icon = document.getElementById(`icon-${type}`);
         const num = document.getElementById(`num-${type}`);
-        const batEl = document.getElementById(`bat-${type}`);
         const labelEl = document.getElementById(`label-${type}`);
 
         try {
             statusText.innerText = `${device.name} 연결 중...`;
             const server = await device.gatt.connect();
             
-            // 1. 주사위 신호 수신
             const service = await server.getPrimaryService(GODICE_SERVICE_UUID);
             const characteristic = await service.getCharacteristic(GODICE_NOTIFY_CHAR_UUID);
             await characteristic.startNotifications();
-
-            // 2. 배터리 잔량 조회
-            try {
-                const batService = await server.getPrimaryService(BATTERY_SERVICE_UUID);
-                const batChar = await batService.getCharacteristic(BATTERY_LEVEL_CHAR_UUID);
-                const batValue = await batChar.readValue();
-                const batteryLevel = batValue.getUint8(0);
-                batEl.innerText = `⚡ ${batteryLevel}%`;
-            } catch (batErr) {
-                batEl.innerText = `⚡ --%`;
-            }
 
             connectedDevices[type] = device;
             labelEl.innerText = type === 'K' ? 'BLACK' : 'BLUE';
@@ -298,8 +341,9 @@
             statusText.innerText = `✅ ${device.name} 연결 완료`;
 
             if (connectedDevices['K'] && connectedDevices['B']) {
-                statusText.innerText = '모든 주사위 연결 완료! 잠시 후 화면이 숨겨집니다.';
+                statusText.innerText = '모든 주사위 연결 완료!';
                 btnConnectBoth.style.display = 'none';
+                btnPosToggle.style.display = 'none'; // 연결 완료 시 위치 조정 버튼 감춤
             }
             
             startStealthTimer();
@@ -324,9 +368,9 @@
                 connectedDevices[type] = null;
                 icon.innerText = '⚀';
                 num.innerText = '-';
-                batEl.innerText = '⚡ - %';
                 mainBody.classList.remove('stealth-active');
                 btnConnectBoth.style.display = 'block';
+                btnPosToggle.style.display = 'block';
                 statusText.innerText = '연결이 해제되었습니다.';
             });
 
