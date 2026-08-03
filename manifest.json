@@ -2,13 +2,13 @@
   "name": "GoDice Magic",
   "short_name": "GoDice",
   "start_url": "./index.html",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#000000",
   "theme_color": "#000000",
   "icons": [
     {
       "src": "https://fav.farm/🎲",
-      "sizes": "192x192",
+      "sizes": "100x100",
       "type": "image/png"
     }
   ]
