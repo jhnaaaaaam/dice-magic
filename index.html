@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>GoDice Magic</title>
+    
+    <!-- PWA (바탕화면 앱 설치) 설정 -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    
+    <!-- PWA 매니페스트 인라인 구성 -->
+    <link rel="manifest" href='data:application/manifest+json,{"name":"GoDice Magic","short_name":"GoDice","start_url":".","display":"standalone","background_color":"#000000","theme_color":"#000000","icons":[{"src":"https://fav.farm/🎲","sizes":"192x192","type":"image/png"}]}'>
+
+    <style>
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #000000;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* 사라질 UI 요소 클래스 */
+        .ui-element {
+            transition: opacity 0.8s ease, visibility 0.8s ease;
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .stealth-active .ui-element {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        h1 { 
+            margin-bottom: 20px; 
+            font-size: 1.5rem; 
+            letter-spacing: 1px; 
+            color: #888888;
+        }
+
+        .dice-container {
+            display: flex;
+            flex-direction: row;
+            gap: 25px;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .dice-card {
+            flex: 1;
+            background-color: #080808;
+            border-radius: 20px;
+            padding: 25px 15px;
+            text-align: center;
+            border: 1px solid #1a1a1a;
+            transition: all 0.3s ease;
+        }
+
+        .black-card .dice-icon { color: #ffffff; }
+        .blue-card .dice-icon { color: #448aff; }
+
+        .label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+        }
+        .black-card .label { color: #555555; }
+        .blue-card .label { color: #1565c0; }
+
+        .dice-icon {
+            font-size: 5.5rem;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+            height: 100px;
+        }
+
+        .dice-number {
+            font-size: 3rem;
+            font-weight: 800;
+            color: #ffffff;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 30px;
+            width: 100%;
+            max-width: 320px;
+        }
+
+        button {
+            color: white;
+            border: none;
+            padding: 14px 20px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-dual { background-color: #333333; }
+        .btn-install { background-color: #1b5e20; display: none; } /* PWA 설치 버튼 */
+
+        button:disabled { background-color: #111111; color: #444; cursor: not-allowed; }
+
+        #statusText {
+            margin-top: 15px;
+            color: #555555;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body id="mainBody">
+
+    <h1 class="ui-element">🎲 GoDice Receiver</h1>
+
+    <div class="dice-container">
+        <!-- 왼쪽: 검정 주사위 -->
+        <div class="dice-card black-card" id="card-K">
+            <div class="label ui-element">BLACK</div>
+            <div class="dice-icon" id="icon-K">⚀</div>
+            <div class="dice-number" id="num-K">-</div>
+        </div>
+
+        <!-- 오른쪽: 파란 주사위 -->
+        <div class="dice-card blue-card" id="card-B">
+            <div class="label ui-element">BLUE</div>
+            <div class="dice-icon" id="icon-B">⚀</div>
+            <div class="dice-number" id="num-B">-</div>
+        </div>
+    </div>
+
+    <div class="controls ui-element">
+        <button id="btnInstall" class="btn-install">📱 앱으로 설치하기</button>
+        <button id="btnConnectBoth" class="btn-dual">⚡ 주사위 연결하기</button>
+    </div>
+
+    <div id="statusText" class="ui-element">주사위를 연결해 주세요.</div>
+
+<script>
+    const GODICE_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const GODICE_NOTIFY_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+    const diceIcons = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+    const mainBody = document.getElementById('mainBody');
+    const btnConnectBoth = document.getElementById('btnConnectBoth');
+    const btnInstall = document.getElementById('btnInstall');
+    const statusText = document.getElementById('statusText');
+
+    let connectedDevices = { 'K': null, 'B': null };
+    let stealthTimer = null;
+    let deferredPrompt = null;
+
+    // --- PWA 앱 설치 이벤트 처리 ---
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        btnInstall.style.display = 'block';
+    });
+
+    btnInstall.addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                btnInstall.style.display = 'none';
+            }
+            deferredPrompt = null;
+        }
+    });
+
+    // --- 스텔스(화면 숨김) 모드 컨트롤 ---
+    function startStealthTimer() {
+        clearTimeout(stealthTimer);
+        // 3초 후 UI 요소 숨김
+        stealthTimer = setTimeout(() => {
+            if (connectedDevices['K'] || connectedDevices['B']) {
+                mainBody.classList.add('stealth-active');
+            }
+        }, 3000);
+    }
+
+    // 화면 터치 시 잠시 UI 보여주기
+    mainBody.addEventListener('click', (e) => {
+        // 버튼 클릭 시에는 스텔스 해제 동작 방지
+        if (e.target.tagName === 'BUTTON') return;
+
+        if (mainBody.classList.contains('stealth-active')) {
+            mainBody.classList.remove('stealth-active');
+            startStealthTimer(); // 다시 3초 뒤 숨김
+        }
+    });
+
+    function toSignedByte(byteVal) {
+        return byteVal >= 128 ? byteVal - 256 : byteVal;
+    }
+
+    function calculateDiceFace(x, y, z) {
+        const absX = Math.abs(x), absY = Math.abs(y), absZ = Math.abs(z);
+        if (absX >= absY && absX >= absZ) return x < 0 ? 1 : 6;
+        else if (absY >= absX && absY >= absZ) return y > 0 ? 3 : 4;
+        else return z > 0 ? 2 : 5;
+    }
+
+    async function connectBothDice() {
+        statusText.innerText = '주사위를 순서대로 선택해 주세요...';
+        await requestAndConnectOne();
+        if (!connectedDevices['K'] || !connectedDevices['B']) {
+            await requestAndConnectOne();
+        }
+    }
+
+    async function requestAndConnectOne() {
+        try {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ namePrefix: 'GoDice' }],
+                optionalServices: [GODICE_SERVICE_UUID]
+            });
+
+            let type = device.name.includes('_K_') ? 'K' : (device.name.includes('_B_') ? 'B' : null);
+            if (!type) {
+                alert('검정(_K_) 또는 파랑(_B_) 주사위를 선택해주세요.');
+                return;
+            }
+
+            if (connectedDevices[type]) return;
+            await connectToDiceGATT(device, type);
+
+        } catch (err) {
+            if (err.name !== 'NotFoundError') statusText.innerText = `오류: ${err.message}`;
+        }
+    }
+
+    async function connectToDiceGATT(device, type) {
+        const icon = document.getElementById(`icon-${type}`);
+        const num = document.getElementById(`num-${type}`);
+
+        try {
+            statusText.innerText = `${device.name} 연결 중...`;
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(GODICE_SERVICE_UUID);
+            const characteristic = await service.getCharacteristic(GODICE_NOTIFY_CHAR_UUID);
+
+            await characteristic.startNotifications();
+            connectedDevices[type] = device;
+
+            statusText.innerText = `✅ ${type === 'K' ? '검정' : '파란'} 주사위 연결됨`;
+
+            // 주사위 연결 완료 시 타이머 시작
+            if (connectedDevices['K'] && connectedDevices['B']) {
+                statusText.innerText = '연결 완료! 잠시 후 화면이 은밀 모드로 전환됩니다.';
+                btnConnectBoth.style.display = 'none';
+                startStealthTimer();
+            } else {
+                startStealthTimer();
+            }
+
+            characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                const dataView = event.target.value;
+                if (dataView.byteLength < 5) return;
+
+                const x = toSignedByte(dataView.getUint8(2));
+                const y = toSignedByte(dataView.getUint8(3));
+                const z = toSignedByte(dataView.getUint8(4));
+
+                const diceVal = calculateDiceFace(x, y, z);
+
+                if (diceVal >= 1 && diceVal <= 6) {
+                    icon.innerText = diceIcons[diceVal];
+                    num.innerText = diceVal;
+                }
+            });
+
+            device.addEventListener('gattserverdisconnected', () => {
+                connectedDevices[type] = null;
+                icon.innerText = '⚀';
+                num.innerText = '-';
+                mainBody.classList.remove('stealth-active');
+                btnConnectBoth.style.display = 'block';
+                statusText.innerText = '연결이 해제되었습니다.';
+            });
+
+        } catch (err) {
+            statusText.innerText = `연결 실패: ${err.message}`;
+        }
+    }
+
+    btnConnectBoth.addEventListener('click', connectBothDice);
+</script>
+
+</body>
+</html>
