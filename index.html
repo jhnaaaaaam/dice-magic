@@ -391,30 +391,28 @@
 
             characteristic.addEventListener('characteristicvaluechanged', (event) => {
                 const dataView = event.target.value;
-                // 패킷 길이가 최소 규격 미만이면 무시
-                if (!dataView || dataView.byteLength < 3) return;
-
-                let x, y, z;
-
-                // GoDice 특성: 패킷 포맷에 따른 좌표 파싱 (안정적인 5바이트 이상 패킷 우선)
-                if (dataView.byteLength >= 5) {
-                    x = toSignedByte(dataView.getUint8(2));
-                    y = toSignedByte(dataView.getUint8(3));
-                    z = toSignedByte(dataView.getUint8(4));
-                } else {
-                    x = toSignedByte(dataView.getUint8(0));
-                    y = toSignedByte(dataView.getUint8(1));
-                    z = toSignedByte(dataView.getUint8(2));
-                }
+                if (!dataView || dataView.byteLength < 5) return;
             
-                // 던졌을 때 강한 충격파(노이즈) 제거 및 가장 강한 축 면 계산
-                const diceVal = calculateDiceFace(x, y, z);
+                // GoDice 표준 가속도 패킷 파싱
+                const x = toSignedByte(dataView.getUint8(2));
+                const y = toSignedByte(dataView.getUint8(3));
+                const z = toSignedByte(dataView.getUint8(4));
             
-                if (diceVal >= 1 && diceVal <= 6) {
-                    // 값이 실제로 달라졌을 때만 UI 업데이트 (렌더링 렉 감소)
-                    if (num.innerText !== String(diceVal)) {
-                        icon.innerText = diceIcons[diceVal];
-                        num.innerText = diceVal;
+                // 1. [핵심] 주사위가 튕기거나 굴러갈 때의 강한 충격(가속도) 노이즈 필터링
+                // 정상 정지 상태일 때는 3축 중 한 축에만 중력가속도(약 16~64)가 작용합니다.
+                const absX = Math.abs(x), absY = Math.abs(y), absZ = Math.abs(z);
+                const maxAccel = Math.max(absX, absY, absZ);
+            
+                // 2. 바닥에 완전히 안착하여 중력 값 수준의 안정적 데이터가 들어왔을 때만 눈금 계산
+                if (maxAccel >= 12 && maxAccel <= 80) {
+                    const diceVal = calculateDiceFace(x, y, z);
+            
+                    if (diceVal >= 1 && diceVal <= 6) {
+                        // 값이 달라졌을 때만 UI 업데이트
+                        if (num.innerText !== String(diceVal)) {
+                            icon.innerText = diceIcons[diceVal];
+                            num.innerText = diceVal;
+                        }
                     }
                 }
             });
