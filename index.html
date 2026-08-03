@@ -44,7 +44,7 @@
             z-index: 999;
         }
 
-        /* 상단 밝기 조절 바 */
+        /* 상단 밝기 조절 바 (기본 숨김 -> 연결 후 터치 시 표시) */
         .brightness-control {
             position: fixed;
             top: 20px;
@@ -54,7 +54,7 @@
             border: 1px solid #333;
             padding: 10px 20px;
             border-radius: 20px;
-            display: flex;
+            display: none; /* 초기에는 완전히 안 보임 */
             align-items: center;
             gap: 12px;
             z-index: 1000;
@@ -181,7 +181,7 @@
     <!-- 밝기 조절 필터 레이어 -->
     <div id="brightnessOverlay"></div>
 
-    <!-- 밝기 조절 슬라이더 (스텔스 모드 해제 시 보임) -->
+    <!-- 밝기 조절 슬라이더 (주사위 연결 완료 후 스텔스 해제 시에만 표시) -->
     <div class="brightness-control ui-element" id="brightnessControl">
         <span>☀️ 밝기</span>
         <input type="range" id="brightnessRange" min="10" max="100" value="100">
@@ -225,6 +225,7 @@
     const btnConnectBoth = document.getElementById('btnConnectBoth');
     const btnPosToggle = document.getElementById('btnPosToggle');
     const statusText = document.getElementById('statusText');
+    const brightnessControl = document.getElementById('brightnessControl');
     const brightnessRange = document.getElementById('brightnessRange');
     const brightnessOverlay = document.getElementById('brightnessOverlay');
 
@@ -248,7 +249,6 @@
     // 밝기 조절 슬라이더 로직
     brightnessRange.addEventListener('input', (e) => {
         const val = parseInt(e.target.value);
-        // 밝기 값이 낮을수록 오버레이 투명도를 높여 화면을 어둡게 만듦
         brightnessOverlay.style.opacity = (100 - val) / 100;
     });
 
@@ -343,7 +343,10 @@
             if (connectedDevices['K'] && connectedDevices['B']) {
                 statusText.innerText = '모든 주사위 연결 완료!';
                 btnConnectBoth.style.display = 'none';
-                btnPosToggle.style.display = 'none'; // 연결 완료 시 위치 조정 버튼 감춤
+                btnPosToggle.style.display = 'none'; // 초기 설정 버튼 감춤
+                
+                // 두 개 모두 연결되면 밝기 조절 슬라이더 활성화 및 표시
+                brightnessControl.style.display = 'flex';
             }
             
             startStealthTimer();
@@ -371,6 +374,7 @@
                 mainBody.classList.remove('stealth-active');
                 btnConnectBoth.style.display = 'block';
                 btnPosToggle.style.display = 'block';
+                brightnessControl.style.display = 'none'; // 해제 시 밝기 버튼 숨김
                 statusText.innerText = '연결이 해제되었습니다.';
             });
 
